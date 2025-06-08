@@ -208,17 +208,16 @@ void DrawProcessSelectorUI() {
     static std::vector<int> filteredIndexMap;
     static int selectedRow = -1;
 
-    // Sticky middle container for search + intro text
-    ImGui::BeginChild("SearchAndIntro", ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 4), false);
-
-    //ImGui::Text("Welcome, Collin. Time to melt some memory.");
+    // Top section: Welcome + Search
+    ImGui::Text("Welcome, Collin. Time to melt some memory.");
     ImGui::InputTextWithHint("##Filter", "Search processes...", processFilter, IM_ARRAYSIZE(processFilter));
     ImGui::Separator();
 
-    ImGui::EndChild();
+    // Compute remaining vertical space to fit process table
+    float footerHeight = ImGui::GetFrameHeightWithSpacing() * 2.5f;
+    float availableHeight = ImGui::GetContentRegionAvail().y - footerHeight;
 
-    // Scrollable table below
-    ImGui::BeginChild("ScrollableTable", ImVec2(0, 0), true);
+    ImGui::BeginChild("ScrollableTable", ImVec2(0, availableHeight), true);
 
     if (processList.empty()) {
         ImGui::Text("No processes found.");
@@ -272,13 +271,19 @@ void DrawProcessSelectorUI() {
         ImGui::EndTable();
     }
 
+    ImGui::EndChild(); // process table
+
+    // Sticky footer with selected process & attach button
     if (targetPID != 0) {
         ImGui::Separator();
         ImGui::Text("Selected: %s (PID: %lu)", selectedProcessName.c_str(), targetPID);
     }
 
-    ImGui::EndChild(); // scrollable table
+    if (ImGui::Button("Attach to Process", ImVec2(-1, 0))) {
+        // TODO: process scan & attach logic
+    }
 }
+
 
 
 
@@ -356,8 +361,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         }
 
         if (currentTab == 0) {
-            ImGui::Text("Welcome, Collin. Time to melt some memory.");
-
+            
             auto now = std::chrono::steady_clock::now();
             if (now - lastRefresh >= refreshInterval) {
                 RefreshProcessList();
@@ -368,9 +372,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
 
             DrawProcessSelectorUI();
 
-            if (ImGui::Button("Attach to Process") && targetPID != 0) {
-                // TODO: memory attach
-            }
+            
         }
 
         if (currentTab == 1) {
