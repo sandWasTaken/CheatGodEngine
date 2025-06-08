@@ -218,7 +218,12 @@ void DrawProcessSelectorUI() {
     static int selectedRow = -1;
     static bool sortByMemory = true;
 
-    // Top: Sort toggle + search input + reset
+    float totalHeight = ImGui::GetContentRegionAvail().y;
+    float halfHeight = totalHeight * 0.5f;
+
+    // TOP HALF = PROCESS TABLE
+    ImGui::BeginChild("ProcessSection", ImVec2(0, halfHeight), true);
+
     ImGui::Checkbox("Sort by memory", &sortByMemory);
     ImGui::SameLine();
     ImGui::Text("Welcome, Collin. Time to melt some memory.");
@@ -229,20 +234,11 @@ void DrawProcessSelectorUI() {
 
     ImGui::Separator();
 
-    // Sort based on user toggle
     std::sort(processList.begin(), processList.end(), [&](const ProcEntry& a, const ProcEntry& b) {
         if (a.arch == "K" || a.arch == "P") return false;
         if (b.arch == "K" || b.arch == "P") return true;
-
-        return sortByMemory
-            ? a.memoryUsage > b.memoryUsage
-            : a.name < b.name;
+        return sortByMemory ? a.memoryUsage > b.memoryUsage : a.name < b.name;
         });
-
-    float footerHeight = ImGui::GetFrameHeightWithSpacing() * 2.5f;
-    float availableHeight = ImGui::GetContentRegionAvail().y - footerHeight;
-
-    ImGui::BeginChild("ScrollableTable", ImVec2(0, availableHeight), true);
 
     filteredIndexMap.clear();
 
@@ -261,15 +257,12 @@ void DrawProcessSelectorUI() {
                 std::string filterLower = processFilter;
                 std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
                 std::transform(filterLower.begin(), filterLower.end(), filterLower.begin(), ::tolower);
-
-                if (nameLower.find(filterLower) == std::string::npos)
-                    continue;
+                if (nameLower.find(filterLower) == std::string::npos) continue;
             }
 
             filteredIndexMap.push_back(i);
             ImGui::TableNextRow();
 
-            // Name column
             ImGui::TableSetColumnIndex(0);
             std::string label = p.name + "##" + std::to_string(p.pid);
             bool isSelected = (selectedRow == filteredIndexMap.size() - 1);
@@ -279,19 +272,17 @@ void DrawProcessSelectorUI() {
                 selectedProcessName = p.name;
                 targetPID = p.pid;
             }
+
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("%s", p.fullPath.c_str());
-            }
-            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-                // Attach-to-process trigger
-                // TODO: Insert actual attach code
+                if (ImGui::IsMouseDoubleClicked(0)) {
+                    // TODO: Attach logic here
+                }
             }
 
-            // Size column
             ImGui::TableSetColumnIndex(1);
             ImGui::Text("%zu MB", p.memoryUsage / (1024 * 1024));
 
-            // Arch column
             ImGui::TableSetColumnIndex(2);
             ImVec4 color = ImVec4(1, 1, 1, 1);
             if (p.arch == "x64") color = ImVec4(0.4f, 1.0f, 0.4f, 1.0f);
@@ -299,7 +290,6 @@ void DrawProcessSelectorUI() {
             else if (p.arch == "K" || p.arch == "P") color = ImVec4(0.9f, 0.5f, 0.5f, 1.0f);
             ImGui::TextColored(color, "%s", p.arch.c_str());
 
-            // Thread count column
             ImGui::TableSetColumnIndex(3);
             ImGui::Text("%lu", p.threadCount);
         }
@@ -309,14 +299,24 @@ void DrawProcessSelectorUI() {
 
     ImGui::EndChild();
 
+    // BOTTOM HALF = MEMORY TOOLS + ATTACH BUTTON
+    ImGui::BeginChild("MemorySection", ImVec2(0, 0), true); // Remaining space
+
     if (targetPID != 0) {
-        ImGui::Separator();
         ImGui::Text("Selected: %s (PID: %lu)", selectedProcessName.c_str(), targetPID);
         if (ImGui::Button("Attach to Process", ImVec2(-1, 0))) {
-            // TODO: process attach logic
+            // TODO: Implement attach logic
         }
     }
+
+    ImGui::Separator();
+    ImGui::Text("🧠 Memory tools will go here.");
+    ImGui::Text("• Placeholder space for scanning, region maps, etc.");
+    ImGui::Text("• Auto attach flag? Memory region selector?");
+
+    ImGui::EndChild();
 }
+
 
 
 
