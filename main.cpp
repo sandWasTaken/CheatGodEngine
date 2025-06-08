@@ -18,11 +18,6 @@
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "dxgi.lib")
 
-#include <shlwapi.h>
-#pragma comment(lib, "Shlwapi.lib")
-static DWORD selectedProcess = 0;
-
-
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 
@@ -247,57 +242,72 @@ void DrawProcessSelectorUI() {
     float footerHeight = ImGui::GetFrameHeightWithSpacing() * 2.5f;
     float availableHeight = ImGui::GetContentRegionAvail().y - footerHeight;
 
-    // Reserve 60% of the height for the process list
-    float windowHeight = ImGui::GetWindowHeight();
-    float processListHeight = windowHeight * 0.6f;
+    ImGui::BeginChild("ScrollableTable", ImVec2(0, availableHeight), true);
 
-    // --- Process List Panel ---
-    ImGui::BeginChild("ProcessList", ImVec2(0, processListHeight), true, ImGuiWindowFlags_NoScrollbar);
+    filteredIndexMap.clear();
 
-    if (ImGui::BeginTable("ProcessTable", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInner | ImGuiTableFlags_Resizable))
-    {
-        ImGui::TableSetupColumn("Name");
-        ImGui::TableSetupColumn("Size");
-        ImGui::TableSetupColumn("Arch");
-        ImGui::TableSetupColumn("Threads");
+    if (ImGui::BeginTable("ProcessTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("Arch", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("Threads", ImGuiTableColumnFlags_WidthFixed);
         ImGui::TableHeadersRow();
 
-        for (const auto& process : processes)
-        {
-            if (searchBuffer[0] != '\0' && !StrStrIA(process.name.c_str(), searchBuffer))
-                continue;
+        for (int i = 0; i < processList.size(); ++i) {
+            const ProcEntry& p = processList[i];
 
+            if (strlen(processFilter) > 0) {
+                std::string nameLower = p.name;
+                std::string filterLower = processFilter;
+                std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
+                std::transform(filterLower.begin(), filterLower.end(), filterLower.begin(), ::tolower);
+
+                if (nameLower.find(filterLower) == std::string::npos)
+                    continue;
+            }
+
+            filteredIndexMap.push_back(i);
             ImGui::TableNextRow();
 
+            // Name column
             ImGui::TableSetColumnIndex(0);
-            if (ImGui::Selectable(process.name.c_str(), selectedProcess == process.pid))
-                selectedProcess = process.pid;
+            std::string label = p.name + "##" + std::to_string(p.pid);
+            bool isSelected = (selectedRow == filteredIndexMap.size() - 1);
+            if (ImGui::Selectable(label.c_str(), isSelected, ImGuiSelectableFlags_SpanAllColumns)) {
+                selectedRow = filteredIndexMap.size() - 1;
+                selectedIndex = i;
+                selectedProcessName = p.name;
+                targetPID = p.pid;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s", p.fullPath.c_str());
+            }
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                // Attach-to-process trigger
+                // TODO: Insert actual attach code
+            }
 
-            if (ImGui::IsItemHovered() && !process.fullPath.empty())
-                ImGui::SetTooltip("%s", process.fullPath.c_str());
-
+            // Size column
             ImGui::TableSetColumnIndex(1);
-            ImGui::Text("%d MB", process.memoryUsageMB);
+            ImGui::Text("%zu MB", p.memoryUsage / (1024 * 1024));
 
+            // Arch column
             ImGui::TableSetColumnIndex(2);
-            ImGui::TextColored(
-                process.isWow64 ? ImVec4(1, 1, 0, 1) : ImVec4(0, 1, 0, 1),
-                process.isWow64 ? "x86" : "x64");
+            ImVec4 color = ImVec4(1, 1, 1, 1);
+            if (p.arch == "x64") color = ImVec4(0.4f, 1.0f, 0.4f, 1.0f);
+            else if (p.arch == "x86") color = ImVec4(1.0f, 1.0f, 0.4f, 1.0f);
+            else if (p.arch == "K" || p.arch == "P") color = ImVec4(0.9f, 0.5f, 0.5f, 1.0f);
+            ImGui::TextColored(color, "%s", p.arch.c_str());
 
+            // Thread count column
             ImGui::TableSetColumnIndex(3);
-            ImGui::Text("%d", process.threadCount);
+            ImGui::Text("%lu", p.threadCount);
         }
 
         ImGui::EndTable();
     }
 
     ImGui::EndChild();
-
-    // --- Bottom Reserved Panel ---
-    ImGui::BeginChild("MemoryTools", ImVec2(0, 0), true);
-    ImGui::Text("Memory view / other tools will go here...");
-    ImGui::EndChild();
-
 
     if (targetPID != 0) {
         ImGui::Separator();
