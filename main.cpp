@@ -11,6 +11,7 @@
 #include <algorithm>
 #define _CRT_SECURE_NO_WARNINGS
 #include <psapi.h>
+#include <chrono>
 #pragma comment(lib, "psapi.lib")
 
 #pragma comment(lib, "d3d11.lib")
@@ -221,6 +222,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         return 1;
     }
 
+    static auto lastRefresh = std::chrono::steady_clock::now();
+    static const std::chrono::seconds refreshInterval(1);
+
     ShowWindow(hwnd, SW_SHOWDEFAULT);
     UpdateWindow(hwnd);
 
@@ -257,12 +261,25 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
             ImGui::EndMenuBar();
         }
 
+        auto now = std::chrono::steady_clock::now();
+        if (now - lastRefresh >= refreshInterval) {
+            RefreshProcessList();
+            lastRefresh = now;
+        }
+
         if (currentTab == 0) {
             ImGui::Text("Welcome, Collin. Time to melt some memory.");
+
+            auto now = std::chrono::steady_clock::now();
+            if (now - lastRefresh >= refreshInterval) {
+                RefreshProcessList();
+                lastRefresh = now;
+            }
+
             DrawProcessSelectorUI();
+
             if (ImGui::Button("Attach to Process") && targetPID != 0) {
-                // Placeholder for actual memory attach code
-                // You now have targetPID and selectedProcessName available
+                // TODO: memory attach
             }
         }
 
