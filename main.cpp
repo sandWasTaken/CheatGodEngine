@@ -114,7 +114,8 @@ std::string selectedProcessName = "";
 struct ProcEntry {
     std::string name;
     DWORD pid;
-    SIZE_T memoryUsage; // ← NEW
+    SIZE_T memoryUsage;
+    std::string arch; // NEW: "x86" or "x64"
 };
 
 std::vector<ProcEntry> processList;
@@ -133,13 +134,24 @@ void RefreshProcessList() {
     if (Process32First(snap, &pe32)) {
         do {
             SIZE_T memUsage = 0;
-            HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pe32.th32ProcessID);
+            std::string architecture = "??";
 
+            HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pe32.th32ProcessID);
             if (hProc) {
                 PROCESS_MEMORY_COUNTERS pmc;
                 if (GetProcessMemoryInfo(hProc, &pmc, sizeof(pmc))) {
-                    memUsage = pmc.WorkingSetSize; // in bytes
+                    memUsage = pmc.WorkingSetSize;
                 }
+
+                BOOL isWow64 = FALSE;
+                if (IsWow64Process(hProc, &isWow64)) {
+#ifdef _WIN64
+                    architecture = isWow64 ? "x86" : "x64";
+#else
+                    architecture = "x86";
+#endif
+                }
+
                 CloseHandle(hProc);
             }
 
@@ -147,18 +159,20 @@ void RefreshProcessList() {
             size_t outSize;
             wcstombs_s(&outSize, name, MAX_PATH, pe32.szExeFile, _TRUNCATE);
 
-            processList.push_back({ name, pe32.th32ProcessID, memUsage });
+            processList.push_back({ name, pe32.th32ProcessID, memUsage, architecture });
+
         } while (Process32Next(snap, &pe32));
     }
 
     CloseHandle(snap);
 
     std::sort(processList.begin(), processList.end(), [](const ProcEntry& a, const ProcEntry& b) {
-        return a.memoryUsage > b.memoryUsage; // Biggest RAM user first
+        return a.memoryUsage > b.memoryUsage;
         });
 
     processListScanned = true;
 }
+
 
 void DrawProcessSelectorUI() {
     static char processFilter[256] = "";
@@ -188,14 +202,15 @@ void DrawProcessSelectorUI() {
             std::transform(lowercaseFilter.begin(), lowercaseFilter.end(), lowercaseFilter.begin(), ::tolower);
 
             if (lowercaseName.find(lowercaseFilter) == std::string::npos)
-                continue; // Skip if not a match
+                continue;
         }
 
+        // Format: name (PID) - MB [arch]
         std::string label = p.name + " (" + std::to_string(p.pid) + ") - " +
-            std::to_string(p.memoryUsage / 1024) + " KB";
+            std::to_string(p.memoryUsage / (1024 * 1024)) + " MB [" + p.arch + "]";
         displayNames.push_back(label);
         namePtrs.push_back(displayNames.back().c_str());
-        filteredIndexMap.push_back(i); // store actual index into processList
+        filteredIndexMap.push_back(i);
     }
 
     static int visibleIndex = -1;
@@ -214,6 +229,7 @@ void DrawProcessSelectorUI() {
         ImGui::Text("Selected: %s (PID: %lu)", selectedProcessName.c_str(), targetPID);
     }
 }
+
 
 
 
