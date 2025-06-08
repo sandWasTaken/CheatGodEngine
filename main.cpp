@@ -208,9 +208,10 @@ void DrawProcessSelectorUI() {
     static std::vector<int> filteredIndexMap;
     static int selectedRow = -1;
 
-    // Sticky top bar container
-    ImGui::BeginChild("StickyTop", ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 4), false);
+    // Sticky middle container for search + intro text
+    ImGui::BeginChild("SearchAndIntro", ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 4), false);
 
+    //ImGui::Text("Welcome, Collin. Time to melt some memory.");
     ImGui::InputTextWithHint("##Filter", "Search processes...", processFilter, IM_ARRAYSIZE(processFilter));
     ImGui::Separator();
 
@@ -236,7 +237,6 @@ void DrawProcessSelectorUI() {
         for (int i = 0; i < processList.size(); ++i) {
             const ProcEntry& p = processList[i];
 
-            // Filter logic
             if (strlen(processFilter) > 0) {
                 std::string nameLower = p.name;
                 std::string filterLower = processFilter;
@@ -336,14 +336,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
         ImGui::Begin("CheatTool Panel", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
 
-        if (ImGui::BeginMenuBar()) {
-            if (ImGui::BeginMenu("Tabs")) {
-                if (ImGui::MenuItem("Main"))     currentTab = 0;
-                if (ImGui::MenuItem("Settings")) currentTab = 1;
-                ImGui::EndMenu();
+        if (ImGui::BeginTabBar("Tabs", ImGuiTabBarFlags_Reorderable)) {
+            if (ImGui::BeginTabItem("Main")) {
+                currentTab = 0;
+                ImGui::EndTabItem();
             }
-            ImGui::EndMenuBar();
+            if (ImGui::BeginTabItem("Settings")) {
+                currentTab = 1;
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
         }
+
 
         auto now = std::chrono::steady_clock::now();
         if (now - lastRefresh >= refreshInterval) {
