@@ -277,10 +277,10 @@ void DrawProcessSelectorUI() {
     if (targetPID != 0) {
         ImGui::Separator();
         ImGui::Text("Selected: %s (PID: %lu)", selectedProcessName.c_str(), targetPID);
-    }
 
-    if (ImGui::Button("Attach to Process", ImVec2(-1, 0))) {
-        // TODO: process scan & attach logic
+        if (ImGui::Button("Attach to Process", ImVec2(-1, 0))) {
+            // TODO: process scan & attach logic
+        }
     }
 }
 
