@@ -163,6 +163,7 @@ void RefreshProcessList() {
 void DrawProcessSelectorUI() {
     static char processFilter[256] = "";
     static std::vector<std::string> displayNames;
+    static std::vector<int> filteredIndexMap;
 
     ImGui::InputTextWithHint("##Filter", "Search processes...", processFilter, IM_ARRAYSIZE(processFilter));
     ImGui::Separator();
@@ -173,9 +174,12 @@ void DrawProcessSelectorUI() {
     }
 
     displayNames.clear();
+    filteredIndexMap.clear();
     std::vector<const char*> namePtrs;
 
-    for (auto& p : processList) {
+    for (int i = 0; i < processList.size(); ++i) {
+        const ProcEntry& p = processList[i];
+
         if (strlen(processFilter) > 0) {
             std::string lowercaseName = p.name;
             std::string lowercaseFilter = processFilter;
@@ -184,20 +188,25 @@ void DrawProcessSelectorUI() {
             std::transform(lowercaseFilter.begin(), lowercaseFilter.end(), lowercaseFilter.begin(), ::tolower);
 
             if (lowercaseName.find(lowercaseFilter) == std::string::npos)
-                continue; // skip if not a match
+                continue; // Skip if not a match
         }
 
         std::string label = p.name + " (" + std::to_string(p.pid) + ") - " +
             std::to_string(p.memoryUsage / 1024) + " KB";
         displayNames.push_back(label);
         namePtrs.push_back(displayNames.back().c_str());
+        filteredIndexMap.push_back(i); // store actual index into processList
     }
 
+    static int visibleIndex = -1;
+
     ImGui::Text("Select a process:");
-    if (ImGui::ListBox("##ProcessList", &selectedIndex, namePtrs.data(), static_cast<int>(namePtrs.size()), 10)) {
-        if (selectedIndex >= 0 && selectedIndex < processList.size()) {
-            selectedProcessName = processList[selectedIndex].name;
-            targetPID = processList[selectedIndex].pid;
+    if (ImGui::ListBox("##ProcessList", &visibleIndex, namePtrs.data(), static_cast<int>(namePtrs.size()), 10)) {
+        if (visibleIndex >= 0 && visibleIndex < filteredIndexMap.size()) {
+            int realIndex = filteredIndexMap[visibleIndex];
+            selectedIndex = realIndex;
+            selectedProcessName = processList[realIndex].name;
+            targetPID = processList[realIndex].pid;
         }
     }
 
@@ -205,6 +214,7 @@ void DrawProcessSelectorUI() {
         ImGui::Text("Selected: %s (PID: %lu)", selectedProcessName.c_str(), targetPID);
     }
 }
+
 
 
 
