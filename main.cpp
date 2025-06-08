@@ -107,7 +107,59 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        ImGui::Begin("CheatTool Panel");
+        
+        static int currentTab = 0; // 0 = Main, 1 = Settings
+
+        ImGui::Begin("CheatTool Panel", nullptr, ImGuiWindowFlags_MenuBar);
+
+        // Menu bar for switching tabs
+        if (ImGui::BeginMenuBar()) {
+            if (ImGui::BeginMenu("Tabs")) {
+                if (ImGui::MenuItem("Main")) currentTab = 0;
+                if (ImGui::MenuItem("Settings")) currentTab = 1;
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenuBar();
+        }
+
+        // TAB: MAIN
+        if (currentTab == 0) {
+            ImGui::Text("Welcome, Collin. Time to melt some memory.");
+            if (ImGui::Button("Attach to Process")) {
+                // TODO: Process scan & attach
+            }
+        }
+
+        // TAB: SETTINGS
+        if (currentTab == 1) {
+            ImGui::Text("Settings");
+
+            static bool alwaysOnTop = true;
+            ImGui::Checkbox("Always On Top", &alwaysOnTop);
+            if (alwaysOnTop) {
+                SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+            else {
+                SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+
+            static bool darkMode = true;
+            if (ImGui::Checkbox("Dark Mode", &darkMode)) {
+                if (darkMode)
+                    ImGui::StyleColorsDark();
+                else
+                    ImGui::StyleColorsLight();
+            }
+
+            static bool autoAttach = false;
+            ImGui::Checkbox("Auto-Attach on Launch", &autoAttach);
+        }
+
+        ImGui::End(); // Close CheatTool Panel window
+
+
         ImGui::Text("Welcome, Collin. Time to melt some memory.");
         if (ImGui::Button("Attach to Process")) {
             // TODO: Process scan & attach
@@ -115,6 +167,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         ImGui::End();
 
         ImGui::Render();
+        
         SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         const float clear_color_with_alpha[4] = { 0.1f, 0.1f, 0.1f, 1.0f };
