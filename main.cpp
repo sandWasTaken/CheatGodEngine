@@ -108,11 +108,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         ImGui::NewFrame();
 
         
-        static int currentTab = 0; // 0 = Main, 1 = Settings
+        static int currentTab = 0;
 
-        ImGui::Begin("CheatTool Panel", nullptr, ImGuiWindowFlags_MenuBar);
+        ImGui::Begin("CheatTool Panel");
 
-        // Menu bar for switching tabs
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu("Tabs")) {
                 if (ImGui::MenuItem("Main")) currentTab = 0;
@@ -122,7 +121,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             ImGui::EndMenuBar();
         }
 
-        // TAB: MAIN
         if (currentTab == 0) {
             ImGui::Text("Welcome, Collin. Time to melt some memory.");
             if (ImGui::Button("Attach to Process")) {
@@ -130,10 +128,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             }
         }
 
-        // TAB: SETTINGS
         if (currentTab == 1) {
             ImGui::Text("Settings");
-
             static bool alwaysOnTop = true;
             ImGui::Checkbox("Always On Top", &alwaysOnTop);
             if (alwaysOnTop) {
@@ -157,13 +153,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             ImGui::Checkbox("Auto-Attach on Launch", &autoAttach);
         }
 
-        ImGui::End(); // Close CheatTool Panel window
+        
 
 
-        ImGui::Text("Welcome, Collin. Time to melt some memory.");
-        if (ImGui::Button("Attach to Process")) {
-            // TODO: Process scan & attach
-        }
+        
         ImGui::End();
 
         ImGui::Render();
