@@ -208,11 +208,20 @@ void DrawProcessSelectorUI() {
     static std::vector<int> filteredIndexMap;
     static int selectedRow = -1;
 
+    // Sticky top bar container
+    ImGui::BeginChild("StickyTop", ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 4), false);
+
     ImGui::InputTextWithHint("##Filter", "Search processes...", processFilter, IM_ARRAYSIZE(processFilter));
     ImGui::Separator();
 
+    ImGui::EndChild();
+
+    // Scrollable table below
+    ImGui::BeginChild("ScrollableTable", ImVec2(0, 0), true);
+
     if (processList.empty()) {
         ImGui::Text("No processes found.");
+        ImGui::EndChild();
         return;
     }
 
@@ -227,12 +236,13 @@ void DrawProcessSelectorUI() {
         for (int i = 0; i < processList.size(); ++i) {
             const ProcEntry& p = processList[i];
 
-            // Case-insensitive filter
+            // Filter logic
             if (strlen(processFilter) > 0) {
                 std::string nameLower = p.name;
                 std::string filterLower = processFilter;
                 std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
                 std::transform(filterLower.begin(), filterLower.end(), filterLower.begin(), ::tolower);
+
                 if (nameLower.find(filterLower) == std::string::npos)
                     continue;
             }
@@ -242,8 +252,10 @@ void DrawProcessSelectorUI() {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
 
+            std::string displayName = p.name + "##" + std::to_string(p.pid);
             bool isSelected = (selectedRow == filteredIndexMap.size() - 1);
-            if (ImGui::Selectable((p.name + "##" + std::to_string(p.pid)).c_str(), isSelected, ImGuiSelectableFlags_SpanAllColumns)) {
+
+            if (ImGui::Selectable(displayName.c_str(), isSelected, ImGuiSelectableFlags_SpanAllColumns)) {
                 selectedRow = filteredIndexMap.size() - 1;
                 selectedIndex = i;
                 selectedProcessName = p.name;
@@ -258,14 +270,15 @@ void DrawProcessSelectorUI() {
         }
 
         ImGui::EndTable();
-
-        if (targetPID != 0) {
-            ImGui::Separator();
-            ImGui::Text("Selected: %s (PID: %lu)", selectedProcessName.c_str(), targetPID);
-        }
     }
 
+    if (targetPID != 0) {
+        ImGui::Separator();
+        ImGui::Text("Selected: %s (PID: %lu)", selectedProcessName.c_str(), targetPID);
     }
+
+    ImGui::EndChild(); // scrollable table
+}
 
 
 
