@@ -115,7 +115,9 @@ struct ProcEntry {
     std::string name;
     DWORD pid;
     SIZE_T memoryUsage;
-    std::string arch; // NEW: "x86" or "x64"
+    std::string arch;
+    std::string fullPath;     // NEW
+    DWORD threadCount;        // NEW
 };
 
 std::vector<ProcEntry> processList;
@@ -159,12 +161,21 @@ void RefreshProcessList() {
 
             SIZE_T memUsage = 0;
             std::string architecture = "??";
+            std::string fullPath = "";
+            DWORD threadCount = pe32.cntThreads;
 
             HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe32.th32ProcessID);
             if (hProc) {
                 PROCESS_MEMORY_COUNTERS pmc;
                 if (GetProcessMemoryInfo(hProc, &pmc, sizeof(pmc))) {
                     memUsage = pmc.WorkingSetSize;
+                }
+
+                TCHAR pathBuf[MAX_PATH];
+                if (GetModuleFileNameEx(hProc, NULL, pathBuf, MAX_PATH)) {
+                    char pathChar[MAX_PATH];
+                    wcstombs_s(&outSize, pathChar, MAX_PATH, pathBuf, _TRUNCATE);
+                    fullPath = pathChar;
                 }
 
                 BOOL isWow64 = FALSE;
@@ -179,12 +190,10 @@ void RefreshProcessList() {
                 CloseHandle(hProc);
             }
 
-            if (isKernel)
-                architecture = "K";
-            else if (isPseudo)
-                architecture = "P";
+            if (isKernel) architecture = "K";
+            else if (isPseudo) architecture = "P";
 
-            processList.push_back({ name, pe32.th32ProcessID, memUsage, architecture });
+            processList.push_back({ name, pe32.th32ProcessID, memUsage, architecture, fullPath, threadCount });
 
         } while (Process32Next(snap, &pe32));
     }
@@ -192,10 +201,9 @@ void RefreshProcessList() {
     CloseHandle(snap);
 
     std::sort(processList.begin(), processList.end(), [](const ProcEntry& a, const ProcEntry& b) {
-        // Sort K and P last
         if (a.arch == "K" || a.arch == "P") return false;
         if (b.arch == "K" || b.arch == "P") return true;
-        return a.memoryUsage > b.memoryUsage;
+        return a.memoryUsage > b.memoryUsage; // default sort by memory
         });
 
     processListScanned = true;
@@ -203,34 +211,46 @@ void RefreshProcessList() {
 
 
 
+
 void DrawProcessSelectorUI() {
     static char processFilter[256] = "";
     static std::vector<int> filteredIndexMap;
     static int selectedRow = -1;
+    static bool sortByMemory = true;
 
-    // Top section: Welcome + Search
+    // Top: Sort toggle + search input + reset
+    ImGui::Checkbox("Sort by memory", &sortByMemory);
+    ImGui::SameLine();
     ImGui::Text("Welcome, Collin. Time to melt some memory.");
+
     ImGui::InputTextWithHint("##Filter", "Search processes...", processFilter, IM_ARRAYSIZE(processFilter));
+    ImGui::SameLine();
+    if (ImGui::Button("X")) processFilter[0] = '\0';
+
     ImGui::Separator();
 
-    // Compute remaining vertical space to fit process table
+    // Sort based on user toggle
+    std::sort(processList.begin(), processList.end(), [&](const ProcEntry& a, const ProcEntry& b) {
+        if (a.arch == "K" || a.arch == "P") return false;
+        if (b.arch == "K" || b.arch == "P") return true;
+
+        return sortByMemory
+            ? a.memoryUsage > b.memoryUsage
+            : a.name < b.name;
+        });
+
     float footerHeight = ImGui::GetFrameHeightWithSpacing() * 2.5f;
     float availableHeight = ImGui::GetContentRegionAvail().y - footerHeight;
 
     ImGui::BeginChild("ScrollableTable", ImVec2(0, availableHeight), true);
 
-    if (processList.empty()) {
-        ImGui::Text("No processes found.");
-        ImGui::EndChild();
-        return;
-    }
-
     filteredIndexMap.clear();
 
-    if (ImGui::BeginTable("ProcessTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+    if (ImGui::BeginTable("ProcessTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed);
         ImGui::TableSetupColumn("Arch", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("Threads", ImGuiTableColumnFlags_WidthFixed);
         ImGui::TableHeadersRow();
 
         for (int i = 0; i < processList.size(); ++i) {
@@ -247,42 +267,57 @@ void DrawProcessSelectorUI() {
             }
 
             filteredIndexMap.push_back(i);
-
             ImGui::TableNextRow();
+
+            // Name column
             ImGui::TableSetColumnIndex(0);
-
-            std::string displayName = p.name + "##" + std::to_string(p.pid);
+            std::string label = p.name + "##" + std::to_string(p.pid);
             bool isSelected = (selectedRow == filteredIndexMap.size() - 1);
-
-            if (ImGui::Selectable(displayName.c_str(), isSelected, ImGuiSelectableFlags_SpanAllColumns)) {
+            if (ImGui::Selectable(label.c_str(), isSelected, ImGuiSelectableFlags_SpanAllColumns)) {
                 selectedRow = filteredIndexMap.size() - 1;
                 selectedIndex = i;
                 selectedProcessName = p.name;
                 targetPID = p.pid;
             }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s", p.fullPath.c_str());
+            }
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                // Attach-to-process trigger
+                // TODO: Insert actual attach code
+            }
 
+            // Size column
             ImGui::TableSetColumnIndex(1);
             ImGui::Text("%zu MB", p.memoryUsage / (1024 * 1024));
 
+            // Arch column
             ImGui::TableSetColumnIndex(2);
-            ImGui::Text("%s", p.arch.c_str());
+            ImVec4 color = ImVec4(1, 1, 1, 1);
+            if (p.arch == "x64") color = ImVec4(0.4f, 1.0f, 0.4f, 1.0f);
+            else if (p.arch == "x86") color = ImVec4(1.0f, 1.0f, 0.4f, 1.0f);
+            else if (p.arch == "K" || p.arch == "P") color = ImVec4(0.9f, 0.5f, 0.5f, 1.0f);
+            ImGui::TextColored(color, "%s", p.arch.c_str());
+
+            // Thread count column
+            ImGui::TableSetColumnIndex(3);
+            ImGui::Text("%lu", p.threadCount);
         }
 
         ImGui::EndTable();
     }
 
-    ImGui::EndChild(); // process table
+    ImGui::EndChild();
 
-    // Sticky footer with selected process & attach button
     if (targetPID != 0) {
         ImGui::Separator();
         ImGui::Text("Selected: %s (PID: %lu)", selectedProcessName.c_str(), targetPID);
-
         if (ImGui::Button("Attach to Process", ImVec2(-1, 0))) {
-            // TODO: process scan & attach logic
+            // TODO: process attach logic
         }
     }
 }
+
 
 
 
