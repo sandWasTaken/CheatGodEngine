@@ -133,10 +133,34 @@ void RefreshProcessList() {
 
     if (Process32First(snap, &pe32)) {
         do {
+            char name[MAX_PATH];
+            size_t outSize;
+            wcstombs_s(&outSize, name, MAX_PATH, pe32.szExeFile, _TRUNCATE);
+
+            std::string nameLower = name;
+            std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
+
+            bool isKernel = (
+                nameLower == "wininit.exe" ||
+                nameLower == "csrss.exe" ||
+                nameLower == "services.exe" ||
+                nameLower == "lsass.exe"
+                );
+
+            bool isPseudo = (
+                nameLower == "system" ||
+                nameLower == "registry" ||
+                nameLower == "memory compression" ||
+                nameLower.find("svchost") != std::string::npos ||
+                nameLower.find("idle") != std::string::npos ||
+                nameLower.find("smss") != std::string::npos ||
+                nameLower.find("system process") != std::string::npos
+                );
+
             SIZE_T memUsage = 0;
             std::string architecture = "??";
 
-            HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pe32.th32ProcessID);
+            HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe32.th32ProcessID);
             if (hProc) {
                 PROCESS_MEMORY_COUNTERS pmc;
                 if (GetProcessMemoryInfo(hProc, &pmc, sizeof(pmc))) {
@@ -155,9 +179,10 @@ void RefreshProcessList() {
                 CloseHandle(hProc);
             }
 
-            char name[MAX_PATH];
-            size_t outSize;
-            wcstombs_s(&outSize, name, MAX_PATH, pe32.szExeFile, _TRUNCATE);
+            if (isKernel)
+                architecture = "K";
+            else if (isPseudo)
+                architecture = "P";
 
             processList.push_back({ name, pe32.th32ProcessID, memUsage, architecture });
 
@@ -167,6 +192,9 @@ void RefreshProcessList() {
     CloseHandle(snap);
 
     std::sort(processList.begin(), processList.end(), [](const ProcEntry& a, const ProcEntry& b) {
+        // Sort K and P last
+        if (a.arch == "K" || a.arch == "P") return false;
+        if (b.arch == "K" || b.arch == "P") return true;
         return a.memoryUsage > b.memoryUsage;
         });
 
@@ -174,10 +202,11 @@ void RefreshProcessList() {
 }
 
 
+
 void DrawProcessSelectorUI() {
     static char processFilter[256] = "";
-    static std::vector<std::string> displayNames;
     static std::vector<int> filteredIndexMap;
+    static int selectedRow = -1;
 
     ImGui::InputTextWithHint("##Filter", "Search processes...", processFilter, IM_ARRAYSIZE(processFilter));
     ImGui::Separator();
@@ -187,48 +216,57 @@ void DrawProcessSelectorUI() {
         return;
     }
 
-    displayNames.clear();
     filteredIndexMap.clear();
-    std::vector<const char*> namePtrs;
 
-    for (int i = 0; i < processList.size(); ++i) {
-        const ProcEntry& p = processList[i];
+    if (ImGui::BeginTable("ProcessTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("Arch", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableHeadersRow();
 
-        if (strlen(processFilter) > 0) {
-            std::string lowercaseName = p.name;
-            std::string lowercaseFilter = processFilter;
+        for (int i = 0; i < processList.size(); ++i) {
+            const ProcEntry& p = processList[i];
 
-            std::transform(lowercaseName.begin(), lowercaseName.end(), lowercaseName.begin(), ::tolower);
-            std::transform(lowercaseFilter.begin(), lowercaseFilter.end(), lowercaseFilter.begin(), ::tolower);
+            // Case-insensitive filter
+            if (strlen(processFilter) > 0) {
+                std::string nameLower = p.name;
+                std::string filterLower = processFilter;
+                std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
+                std::transform(filterLower.begin(), filterLower.end(), filterLower.begin(), ::tolower);
+                if (nameLower.find(filterLower) == std::string::npos)
+                    continue;
+            }
 
-            if (lowercaseName.find(lowercaseFilter) == std::string::npos)
-                continue;
+            filteredIndexMap.push_back(i);
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+
+            bool isSelected = (selectedRow == filteredIndexMap.size() - 1);
+            if (ImGui::Selectable((p.name + "##" + std::to_string(p.pid)).c_str(), isSelected, ImGuiSelectableFlags_SpanAllColumns)) {
+                selectedRow = filteredIndexMap.size() - 1;
+                selectedIndex = i;
+                selectedProcessName = p.name;
+                targetPID = p.pid;
+            }
+
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("%zu MB", p.memoryUsage / (1024 * 1024));
+
+            ImGui::TableSetColumnIndex(2);
+            ImGui::Text("%s", p.arch.c_str());
         }
 
-        // Format: name (PID) - MB [arch]
-        std::string label = p.name + " (" + std::to_string(p.pid) + ") - " +
-            std::to_string(p.memoryUsage / (1024 * 1024)) + " MB [" + p.arch + "]";
-        displayNames.push_back(label);
-        namePtrs.push_back(displayNames.back().c_str());
-        filteredIndexMap.push_back(i);
-    }
+        ImGui::EndTable();
 
-    static int visibleIndex = -1;
-
-    ImGui::Text("Select a process:");
-    if (ImGui::ListBox("##ProcessList", &visibleIndex, namePtrs.data(), static_cast<int>(namePtrs.size()), 10)) {
-        if (visibleIndex >= 0 && visibleIndex < filteredIndexMap.size()) {
-            int realIndex = filteredIndexMap[visibleIndex];
-            selectedIndex = realIndex;
-            selectedProcessName = processList[realIndex].name;
-            targetPID = processList[realIndex].pid;
+        if (targetPID != 0) {
+            ImGui::Separator();
+            ImGui::Text("Selected: %s (PID: %lu)", selectedProcessName.c_str(), targetPID);
         }
     }
 
-    if (targetPID != 0) {
-        ImGui::Text("Selected: %s (PID: %lu)", selectedProcessName.c_str(), targetPID);
     }
-}
+
 
 
 
