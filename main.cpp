@@ -5,6 +5,11 @@
 #include "imgui.h"
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
+#include <TlHelp32.h>
+#include <vector>
+#include <string>
+#include <algorithm>
+#define _CRT_SECURE_NO_WARNINGS
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "d3dcompiler.lib")
@@ -22,7 +27,7 @@ ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 void CreateRenderTarget() {
     ID3D11Texture2D* pBackBuffer;
     g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
-    g_pd3dDevice->CreateRenderTargetView(pBackBuffer, NULL, &g_mainRenderTargetView);
+    g_pd3dDevice->CreateRenderTargetView(pBackBuffer, nullptr, &g_mainRenderTargetView);
     pBackBuffer->Release();
 }
 
@@ -34,7 +39,7 @@ void CleanupRenderTarget() {
 }
 
 bool CreateDeviceD3D(HWND hWnd) {
-    DXGI_SWAP_CHAIN_DESC sd{};
+    DXGI_SWAP_CHAIN_DESC sd = {};
     sd.BufferCount = 2;
     sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     sd.BufferDesc.RefreshRate.Numerator = 60;
@@ -47,12 +52,16 @@ bool CreateDeviceD3D(HWND hWnd) {
     sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
     UINT createDeviceFlags = 0;
-    D3D_FEATURE_LEVEL featureLevel;
     const D3D_FEATURE_LEVEL featureLevelArray[1] = { D3D_FEATURE_LEVEL_11_0 };
+    D3D_FEATURE_LEVEL featureLevel;
 
-    if (D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL,
-        createDeviceFlags, featureLevelArray, 1, D3D11_SDK_VERSION, &sd, &g_pSwapChain,
-        &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext) != S_OK)
+    HRESULT hr = D3D11CreateDeviceAndSwapChain(
+        nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, createDeviceFlags,
+        featureLevelArray, 1, D3D11_SDK_VERSION, &sd, &g_pSwapChain,
+        &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext
+    );
+
+    if (FAILED(hr))
         return false;
 
     CreateRenderTarget();
@@ -61,19 +70,117 @@ bool CreateDeviceD3D(HWND hWnd) {
 
 void CleanupDeviceD3D() {
     CleanupRenderTarget();
-    if (g_pSwapChain) { g_pSwapChain->Release(); g_pSwapChain = nullptr; }
-    if (g_pd3dDeviceContext) { g_pd3dDeviceContext->Release(); g_pd3dDeviceContext = nullptr; }
-    if (g_pd3dDevice) { g_pd3dDevice->Release(); g_pd3dDevice = nullptr; }
+    if (g_pSwapChain) { g_pSwapChain->Release();           g_pSwapChain = nullptr; }
+    if (g_pd3dDeviceContext) { g_pd3dDeviceContext->Release();    g_pd3dDeviceContext = nullptr; }
+    if (g_pd3dDevice) { g_pd3dDevice->Release();           g_pd3dDevice = nullptr; }
 }
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L,
-                      hInstance, NULL, NULL, NULL, NULL,
-                      L"CheatToolWndClass", NULL };
+// -- Settings State --
+struct Settings {
+    bool alwaysOnTop = true;
+    bool darkMode = true;
+    bool autoAttach = false;
+    bool showFPS = false;
+} settings;
+
+void DrawSettingsPanel(HWND hwnd) {
+    ImGui::Text("Settings");
+
+    if (ImGui::Checkbox("Always On Top", &settings.alwaysOnTop)) {
+        SetWindowPos(hwnd,
+            settings.alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST,
+            0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+
+    if (ImGui::Checkbox("Dark Mode", &settings.darkMode)) {
+        settings.darkMode ? ImGui::StyleColorsDark() : ImGui::StyleColorsLight();
+    }
+
+    ImGui::Checkbox("Auto-Attach on Launch", &settings.autoAttach);
+    ImGui::Checkbox("Show FPS", &settings.showFPS);
+}
+
+
+// ------------------------------
+// Process Listing + Selection
+// ------------------------------
+
+DWORD targetPID = 0;
+std::string selectedProcessName = "";
+
+struct ProcEntry {
+    std::string name;
+    DWORD pid;
+};
+
+std::vector<ProcEntry> processList;
+int selectedIndex = -1;
+bool processListScanned = false;
+
+void RefreshProcessList() {
+    processList.clear();
+
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return;
+
+    PROCESSENTRY32 pe32;
+    pe32.dwSize = sizeof(PROCESSENTRY32);
+
+    if (Process32First(snap, &pe32)) {
+        do {
+            char name[MAX_PATH];
+            size_t outSize;
+            wcstombs_s(&outSize, name, MAX_PATH, pe32.szExeFile, _TRUNCATE);
+            processList.push_back({ name, pe32.th32ProcessID });
+        } while (Process32Next(snap, &pe32));
+    }
+    CloseHandle(snap);
+
+    std::sort(processList.begin(), processList.end(), [](const ProcEntry& a, const ProcEntry& b) {
+        return a.name < b.name;
+        });
+
+    processListScanned = true;
+}
+
+void DrawProcessSelectorUI() {
+    if (ImGui::Button("Refresh Process List") || !processListScanned) {
+        RefreshProcessList();
+    }
+
+    if (processList.empty()) {
+        ImGui::Text("No processes found.");
+        return;
+    }
+
+    std::vector<const char*> names;
+    names.reserve(processList.size());
+    for (auto& p : processList) names.push_back(p.name.c_str());
+
+    ImGui::Text("Select a process:");
+    if (ImGui::ListBox("##ProcessList", &selectedIndex, names.data(), static_cast<int>(names.size()), 10)) {
+        if (selectedIndex >= 0 && selectedIndex < processList.size()) {
+            selectedProcessName = processList[selectedIndex].name;
+            targetPID = processList[selectedIndex].pid;
+        }
+    }
+
+    if (targetPID != 0) {
+        ImGui::Text("Selected: %s (PID: %lu)", selectedProcessName.c_str(), targetPID);
+    }
+}
+
+
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
+    WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0, 0,
+                      hInstance, nullptr, nullptr, nullptr, nullptr,
+                      L"CheatToolWndClass", nullptr };
     RegisterClassEx(&wc);
+
     HWND hwnd = CreateWindowW(wc.lpszClassName, L"CheatTool GUI",
         WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1000, 600,
-        NULL, NULL, wc.hInstance, NULL);
+        nullptr, nullptr, wc.hInstance, nullptr);
 
     SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 
@@ -94,10 +201,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
-    MSG msg;
-    ZeroMemory(&msg, sizeof(msg));
+    MSG msg = {};
+    static int currentTab = 0;
+
     while (msg.message != WM_QUIT) {
-        if (PeekMessage(&msg, NULL, 0U, 0U, PM_REMOVE)) {
+        if (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
             continue;
@@ -107,14 +215,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        
-        static int currentTab = 0;
-
-        ImGui::Begin("CheatTool Panel");
+        ImGui::Begin("CheatTool Panel", nullptr, ImGuiWindowFlags_MenuBar);
 
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu("Tabs")) {
-                if (ImGui::MenuItem("Main")) currentTab = 0;
+                if (ImGui::MenuItem("Main"))     currentTab = 0;
                 if (ImGui::MenuItem("Settings")) currentTab = 1;
                 ImGui::EndMenu();
             }
@@ -123,53 +228,32 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
         if (currentTab == 0) {
             ImGui::Text("Welcome, Collin. Time to melt some memory.");
-            if (ImGui::Button("Attach to Process")) {
-                // TODO: Process scan & attach
+            DrawProcessSelectorUI();
+            if (ImGui::Button("Attach to Process") && targetPID != 0) {
+                // Placeholder for actual memory attach code
+                // You now have targetPID and selectedProcessName available
             }
         }
 
         if (currentTab == 1) {
-            ImGui::Text("Settings");
-            static bool alwaysOnTop = true;
-            ImGui::Checkbox("Always On Top", &alwaysOnTop);
-            if (alwaysOnTop) {
-                SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-            }
-            else {
-                SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-            }
-
-            static bool darkMode = true;
-            if (ImGui::Checkbox("Dark Mode", &darkMode)) {
-                if (darkMode)
-                    ImGui::StyleColorsDark();
-                else
-                    ImGui::StyleColorsLight();
-            }
-
-            static bool autoAttach = false;
-            ImGui::Checkbox("Auto-Attach on Launch", &autoAttach);
+            DrawSettingsPanel(hwnd);
         }
 
-        
+        if (settings.showFPS) {
+            ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 20);
+            ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+        }
 
-
-        
         ImGui::End();
 
         ImGui::Render();
-        
-        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         const float clear_color_with_alpha[4] = { 0.1f, 0.1f, 0.1f, 1.0f };
-        g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, NULL);
+        g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
         g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clear_color_with_alpha);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
         g_pSwapChain->Present(1, 0);
     }
-    
+
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
@@ -184,11 +268,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
         return true;
+
     switch (msg) {
     case WM_SIZE:
-        if (g_pd3dDevice != NULL && wParam != SIZE_MINIMIZED) {
+        if (g_pd3dDevice && wParam != SIZE_MINIMIZED) {
             CleanupRenderTarget();
-            g_pSwapChain->ResizeBuffers(0, (UINT)LOWORD(lParam), (UINT)HIWORD(lParam), DXGI_FORMAT_UNKNOWN, 0);
+            g_pSwapChain->ResizeBuffers(0, LOWORD(lParam), HIWORD(lParam), DXGI_FORMAT_UNKNOWN, 0);
             CreateRenderTarget();
         }
         return 0;
