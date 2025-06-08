@@ -1,5 +1,14 @@
 ﻿  main.cpp
-C:\Users\somep\source\repos\CheatTool\CheatTool\main.cpp(277,55): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
-  CheatTool.vcxproj -> C:\Users\somep\source\repos\CheatTool\x64\Debug\CheatTool.exe
-  'pwsh.exe' is not recognized as an internal or external command,
-  operable program or batch file.
+C:\Users\somep\source\repos\CheatTool\CheatTool\main.cpp(267,36): error C2065: 'processes': undeclared identifier
+C:\Users\somep\source\repos\CheatTool\CheatTool\main.cpp(267,26): error C2530: 'process': references must be initialized
+C:\Users\somep\source\repos\CheatTool\CheatTool\main.cpp(267,26): error C3531: 'process': a symbol whose type contains 'auto' must have an initializer
+C:\Users\somep\source\repos\CheatTool\CheatTool\main.cpp(267,34): error C2143: syntax error: missing ';' before ':'
+C:\Users\somep\source\repos\CheatTool\CheatTool\main.cpp(267,45): error C2143: syntax error: missing ';' before ')'
+C:\Users\somep\source\repos\CheatTool\CheatTool\main.cpp(269,17): error C2065: 'searchBuffer': undeclared identifier
+C:\Users\somep\source\repos\CheatTool\CheatTool\main.cpp(269,76): error C2065: 'searchBuffer': undeclared identifier
+C:\Users\somep\source\repos\CheatTool\CheatTool\main.cpp(284,20): error C2660: 'ImGui::TextColored': function does not take 1 arguments
+      C:\Users\somep\source\repos\CheatTool\CheatTool\imgui\imgui.h(535,29):
+      see declaration of 'ImGui::TextColored'
+      C:\Users\somep\source\repos\CheatTool\CheatTool\main.cpp(284,20):
+      while trying to match the argument list '()'
+  
