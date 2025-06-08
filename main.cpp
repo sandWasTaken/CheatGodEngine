@@ -1,4 +1,4 @@
-// Enhanced main.cpp with ImGui GUI, WinMain, error handling, and future-ready layout
+﻿// Enhanced main.cpp with ImGui GUI, WinMain, error handling, and future-ready layout
 
 #include <Windows.h>
 #include <d3d11.h>
@@ -10,6 +10,8 @@
 #include <string>
 #include <algorithm>
 #define _CRT_SECURE_NO_WARNINGS
+#include <psapi.h>
+#pragma comment(lib, "psapi.lib")
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "d3dcompiler.lib")
@@ -111,6 +113,7 @@ std::string selectedProcessName = "";
 struct ProcEntry {
     std::string name;
     DWORD pid;
+    SIZE_T memoryUsage; // ← NEW
 };
 
 std::vector<ProcEntry> processList;
@@ -128,16 +131,29 @@ void RefreshProcessList() {
 
     if (Process32First(snap, &pe32)) {
         do {
+            SIZE_T memUsage = 0;
+            HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pe32.th32ProcessID);
+
+            if (hProc) {
+                PROCESS_MEMORY_COUNTERS pmc;
+                if (GetProcessMemoryInfo(hProc, &pmc, sizeof(pmc))) {
+                    memUsage = pmc.WorkingSetSize; // in bytes
+                }
+                CloseHandle(hProc);
+            }
+
             char name[MAX_PATH];
             size_t outSize;
             wcstombs_s(&outSize, name, MAX_PATH, pe32.szExeFile, _TRUNCATE);
-            processList.push_back({ name, pe32.th32ProcessID });
+
+            processList.push_back({ name, pe32.th32ProcessID, memUsage });
         } while (Process32Next(snap, &pe32));
     }
+
     CloseHandle(snap);
 
     std::sort(processList.begin(), processList.end(), [](const ProcEntry& a, const ProcEntry& b) {
-        return a.name < b.name;
+        return a.memoryUsage > b.memoryUsage; // Biggest RAM user first
         });
 
     processListScanned = true;
@@ -153,12 +169,27 @@ void DrawProcessSelectorUI() {
         return;
     }
 
-    std::vector<const char*> names;
-    names.reserve(processList.size());
-    for (auto& p : processList) names.push_back(p.name.c_str());
+    static std::vector<std::string> displayNames;
+    displayNames.clear();
+
+    std::vector<const char*> namePtrs;
+    for (auto& p : processList) {
+        std::string label = p.name + " (" + std::to_string(p.pid) + ") - " +
+            std::to_string(p.memoryUsage / 1024) + " KB";
+        displayNames.push_back(label);
+        namePtrs.push_back(displayNames.back().c_str());
+    }
 
     ImGui::Text("Select a process:");
-    if (ImGui::ListBox("##ProcessList", &selectedIndex, names.data(), static_cast<int>(names.size()), 10)) {
+    if (ImGui::ListBox("##ProcessList", &selectedIndex, namePtrs.data(), static_cast<int>(namePtrs.size()), 10)) {
+        if (selectedIndex >= 0 && selectedIndex < processList.size()) {
+            selectedProcessName = processList[selectedIndex].name;
+            targetPID = processList[selectedIndex].pid;
+        }
+    }
+
+    ImGui::Text("Select a process:");
+    if (ImGui::ListBox("##ProcessList", &selectedIndex, namePtrs.data(), static_cast<int>(namePtrs.size()), 10)) {
         if (selectedIndex >= 0 && selectedIndex < processList.size()) {
             selectedProcessName = processList[selectedIndex].name;
             targetPID = processList[selectedIndex].pid;
