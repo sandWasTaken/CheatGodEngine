@@ -161,20 +161,32 @@ void RefreshProcessList() {
 }
 
 void DrawProcessSelectorUI() {
-    if (ImGui::Button("Refresh Process List") || !processListScanned) {
-        RefreshProcessList();
-    }
+    static char processFilter[256] = "";
+    static std::vector<std::string> displayNames;
+
+    ImGui::InputTextWithHint("##Filter", "Search processes...", processFilter, IM_ARRAYSIZE(processFilter));
+    ImGui::Separator();
 
     if (processList.empty()) {
         ImGui::Text("No processes found.");
         return;
     }
 
-    static std::vector<std::string> displayNames;
     displayNames.clear();
-
     std::vector<const char*> namePtrs;
+
     for (auto& p : processList) {
+        if (strlen(processFilter) > 0) {
+            std::string lowercaseName = p.name;
+            std::string lowercaseFilter = processFilter;
+
+            std::transform(lowercaseName.begin(), lowercaseName.end(), lowercaseName.begin(), ::tolower);
+            std::transform(lowercaseFilter.begin(), lowercaseFilter.end(), lowercaseFilter.begin(), ::tolower);
+
+            if (lowercaseName.find(lowercaseFilter) == std::string::npos)
+                continue; // skip if not a match
+        }
+
         std::string label = p.name + " (" + std::to_string(p.pid) + ") - " +
             std::to_string(p.memoryUsage / 1024) + " KB";
         displayNames.push_back(label);
@@ -189,18 +201,11 @@ void DrawProcessSelectorUI() {
         }
     }
 
-    ImGui::Text("Select a process:");
-    if (ImGui::ListBox("##ProcessList", &selectedIndex, namePtrs.data(), static_cast<int>(namePtrs.size()), 10)) {
-        if (selectedIndex >= 0 && selectedIndex < processList.size()) {
-            selectedProcessName = processList[selectedIndex].name;
-            targetPID = processList[selectedIndex].pid;
-        }
-    }
-
     if (targetPID != 0) {
         ImGui::Text("Selected: %s (PID: %lu)", selectedProcessName.c_str(), targetPID);
     }
 }
+
 
 
 
@@ -275,6 +280,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
                 RefreshProcessList();
                 lastRefresh = now;
             }
+
+            
 
             DrawProcessSelectorUI();
 
